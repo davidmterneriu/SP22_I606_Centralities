@@ -12,6 +12,8 @@ library(tidyverse)
 library(ggplot2)
 library(readr)
 library(igraph)
+library(tidygraph)
+library(ggraph)
 
 dolphin=read_graph("dolphins.gml",format = "gml")
 
@@ -22,6 +24,25 @@ dolphin=dolphin%>%
   set_vertex_attr("closeness",value=closeness(dolphin))%>%
   set_vertex_attr("eigen",value=eigen_centrality(dolphin)$vector%>%unlist()%>%
                     as.numeric())
+
+dolphin%>%ggraph(layout = 'kk') + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = degree, colour = degree)) + 
+  scale_color_continuous(guide = 'legend') + 
+  theme_graph()
+
+dolphin%>%ggraph(layout = 'kk') + 
+  geom_edge_link(alpha=0.1) + 
+  geom_node_point(aes(size = betweenness, colour = betweenness)) + 
+  scale_color_continuous(guide = 'legend') + 
+  theme_graph()
+
+dolphin%>%ggraph(layout = 'kk') + 
+  geom_edge_link(alpha=0.1) + 
+  geom_node_point(aes(size = closeness, colour = closeness)) + 
+  scale_color_continuous(guide = 'legend') + 
+  theme_graph()
+
 
 dolphin_nodes=data.frame(id=V(dolphin)$id,
            label=V(dolphin)$label,

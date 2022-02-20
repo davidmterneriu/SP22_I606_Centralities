@@ -15,7 +15,12 @@ library(igraph)
 library(tidygraph)
 library(ggraph)
 
+
 dolphin=read_graph("dolphins.gml",format = "gml")
+
+node_count=length(V(dolphin))
+
+top_n=3
 
 
 dolphin=dolphin%>%
@@ -25,31 +30,76 @@ dolphin=dolphin%>%
   set_vertex_attr("eigen",value=eigen_centrality(dolphin)$vector%>%unlist()%>%
                     as.numeric())
 
+dolphin_nodes=data.frame(id=V(dolphin)$id,
+                         label=V(dolphin)$label,
+                         degree=V(dolphin)$degree,
+                         betweenness=V(dolphin)$betweenness,
+                         closeness=V(dolphin)$closeness,
+                         eigen=V(dolphin)$eigen)
+
+dolphin_eign=dolphin_nodes%>%dplyr::arrange(-eigen)%>%
+  dplyr::select(label)%>%
+  head(top_n)%>%
+  unlist()%>%
+  as.character()
+
+dolphin_close=dolphin_nodes%>%dplyr::arrange(-closeness)%>%
+  dplyr::select(label)%>%
+  head(top_n)%>%
+  unlist()%>%
+  as.character()
+
+dolphin_between=dolphin_nodes%>%dplyr::arrange(-betweenness)%>%
+  dplyr::select(label)%>%
+  head(top_n)%>%
+  unlist()%>%
+  as.character()
+
+# (1) Popularity contest 
+
+
 dolphin%>%ggraph(layout = 'kk') + 
-  geom_edge_link() + 
-  geom_node_point(aes(size = degree, colour = degree)) + 
+  geom_edge_link(alpha=0.2) + 
+  geom_node_point(aes(size = eigen, colour = eigen)) + 
   scale_color_continuous(guide = 'legend') + 
-  theme_graph()
+  theme_graph()+
+  geom_node_label(aes(label = ifelse(label %in%dolphin_eign , as.character(label),
+                                    NA_character_)),size=2)+
+  labs(color="Eigenvalue Score",title ="Popularity contest",
+       subtitle = "Dolphin Network")+
+  scale_color_viridis_c()+
+  scale_size(guide = 'none')
+
+
+# (2) Relay 
+#standardized score
+
+dolphin%>%ggraph(layout = 'kk') + 
+  geom_edge_link(alpha=0.1) + 
+  geom_node_point(aes(size = closeness, 
+                      colour = closeness*(node_count-1))) + 
+  scale_color_continuous(guide = 'legend') + 
+  theme_graph()+ 
+  geom_node_label(aes(label = ifelse(label %in%dolphin_close , as.character(label),
+                                     NA_character_)),size=2)+
+  labs(color="Closeness Score",title ="Relay",
+       subtitle = "Dolphin Network")+
+  scale_color_viridis_c()+
+  scale_size(guide = 'none')
+
+# (3) Gossip
 
 dolphin%>%ggraph(layout = 'kk') + 
   geom_edge_link(alpha=0.1) + 
   geom_node_point(aes(size = betweenness, colour = betweenness)) + 
   scale_color_continuous(guide = 'legend') + 
-  theme_graph()
-
-dolphin%>%ggraph(layout = 'kk') + 
-  geom_edge_link(alpha=0.1) + 
-  geom_node_point(aes(size = closeness, colour = closeness)) + 
-  scale_color_continuous(guide = 'legend') + 
-  theme_graph()
-
-
-dolphin_nodes=data.frame(id=V(dolphin)$id,
-           label=V(dolphin)$label,
-           degree=V(dolphin)$degree,
-           betweenness=V(dolphin)$betweenness,
-           closeness=V(dolphin)$closeness,
-           eigen=V(dolphin)$eigen)
+  theme_graph()+ 
+  geom_node_label(aes(label = ifelse(label %in%dolphin_between , as.character(label),
+                                     NA_character_)),size=2)+
+  labs(color="Betweenness Score",title ="Gossip",
+       subtitle = "Dolphin Network")+
+  scale_color_viridis_c()+
+  scale_size(guide = 'none')
 
 dolphin_nodes=dolphin_nodes%>%
   mutate(id2=id+1)
@@ -70,29 +120,26 @@ measure_compare=dist_matrix%>%inner_join(dolphin_nodes,by=c("from_d"="id2"))%>%
   group_by(dolphin=label,dist)%>%
   tally()%>%
   ungroup()%>%
-  group_by(dolphin)%>%
+  dplyr::group_by(dolphin)%>%
   summarise(rumor_time=max(dist))%>%
   inner_join(dolphin_nodes,by=c("dolphin"="label"))
 
 
-
 measure_compare%>%
   gather(key="central_measures",value="v",-c(dolphin,id,id2,rumor_time))%>%
-  ggplot(aes(x=rumor_time,y=v))+
-  geom_point()+
-  facet_wrap(~central_measures,scales = "free_y")
+  dplyr::group_by(central_measures)%>%
+  summarise(cor=cor(v,rumor_time,method = "kendall"))%>%
+  arrange(cor)%>%
+  kableExtra::kable(format = "latex",digits = 3,booktabs=T)
 
-library(GGally)
 
-my_fn <- function(data, mapping, ...){
-  p <- ggplot(data = data, mapping = mapping) + 
-    geom_point() + 
-    #geom_smooth(method=loess, fill="red", color="red", ...) +
-    geom_smooth(method=lm, fill="blue", color="blue",alpha=0.2, ...)
-  p
-}
-
-measure_compare[,c("rumor_time","degree","betweenness","closeness",  "eigen")]%>%
-  ggpairs(lower = list(continuous = my_fn))
-
+cbind(dolphin_nodes%>%arrange(-eigen)%>%
+        mutate(rank=seq_along(eigen))%>%
+        select(rank,label,eigen),
+  dolphin_nodes%>%arrange(-closeness)%>%
+    select(label,closeness),
+  dolphin_nodes%>%arrange(-betweenness)%>%
+    select(label,betweenness))%>%
+  kableExtra::kable(format = "latex",digits = 3,booktabs=T,longtable = T)
   
+
